@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-capacity-planner"
+version = "0.1.0"
+description = "Size LLM serving deployments from first principles: a roofline cost model (compute, HBM bandwidth, KV-cache capacity, tensor-parallel all-reduce) driving a continuous-batching simulator, and an SLO-constrained planner that finds the cheapest GPU configuration."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Kishor Hange" }]
+dependencies = ["numpy>=1.26"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+plots = ["matplotlib>=3.8"]
+
+[project.scripts]
+capplan = "capplan.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+extend-exclude = ["notebooks"]  # Colab notebooks use shell magics
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E741"]  # P / O are the paper-standard names for prompt / output lengths
