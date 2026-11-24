@@ -1,0 +1,29 @@
+| deployment | ctx | batch=1 tok/s | batch=32 tok/s | batch=128 tok/s | batch=256 tok/s | bound @256 |
+|---|---|---|---|---|---|---|
+| llama3-8b on 1xH100-SXM | 0 | 120 | 3832 | 15319 | 26085 | compute |
+| llama3-8b on 1xH100-SXM | 1250 | 119 | 3023 | 7399 | 9753 | memory |
+| llama3-8b on 1xH100-SXM | 6200 | 115 | 1646 | 2428 | 2637 | memory |
+| llama3-8b on 1xA100-80G-SXM | 0 | 78 | 2509 | 8721 | 9190 | compute |
+| llama3-8b on 1xA100-80G-SXM | 1250 | 78 | 1948 | 4662 | 6072 | memory |
+| llama3-8b on 1xA100-80G-SXM | 6200 | 75 | 1033 | 1495 | 1615 | memory |
+| llama3-8b on 1xL4 | 0 | 13 | 410 | 1640 | 3276 | memory |
+| llama3-8b on 1xL4 | 1250 | 13 | 311 | 719 | 921 | memory |
+| llama3-8b on 1xL4 | 6200 | 12 | 159 | 223 | 240 | memory |
+| llama3-8b-w8 on 1xH100-SXM | 0 | 203 | 6496 | 22626 | 26085 | compute |
+| llama3-8b-w8 on 1xH100-SXM | 1250 | 200 | 4468 | 9226 | 11216 | memory |
+| llama3-8b-w8 on 1xH100-SXM | 6200 | 190 | 1998 | 2597 | 2733 | memory |
+| llama3-8b-w8 on 1xA100-80G-SXM | 0 | 140 | 4489 | 8721 | 9190 | compute |
+| llama3-8b-w8 on 1xA100-80G-SXM | 1250 | 138 | 2962 | 5863 | 7007 | memory |
+| llama3-8b-w8 on 1xA100-80G-SXM | 6200 | 130 | 1262 | 1600 | 1674 | memory |
+| llama3-8b-w8 on 1xL4 | 0 | 25 | 805 | 3215 | 3686 | compute |
+| llama3-8b-w8 on 1xL4 | 1250 | 25 | 494 | 916 | 1068 | memory |
+| llama3-8b-w8 on 1xL4 | 6200 | 23 | 196 | 239 | 248 | memory |
+| llama3-8b-w8kv8 on 1xH100-SXM | 0 | 203 | 6497 | 22626 | 26085 | compute |
+| llama3-8b-w8kv8 on 1xH100-SXM | 1250 | 202 | 5295 | 13618 | 18451 | memory |
+| llama3-8b-w8kv8 on 1xH100-SXM | 6200 | 196 | 3056 | 4722 | 5194 | memory |
+| llama3-8b-w8kv8 on 1xA100-80G-SXM | 0 | 140 | 4490 | 8721 | 9190 | compute |
+| llama3-8b-w8kv8 on 1xA100-80G-SXM | 1250 | 139 | 3570 | 8413 | 8849 | compute |
+| llama3-8b-w8kv8 on 1xA100-80G-SXM | 6200 | 135 | 1971 | 2938 | 3199 | memory |
+| llama3-8b-w8kv8 on 1xL4 | 0 | 25 | 805 | 3218 | 3686 | compute |
+| llama3-8b-w8kv8 on 1xL4 | 1250 | 25 | 613 | 1427 | 1833 | memory |
+| llama3-8b-w8kv8 on 1xL4 | 6200 | 24 | 315 | 445 | 478 | memory |
