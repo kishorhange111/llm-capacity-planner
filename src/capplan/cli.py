@@ -192,12 +192,26 @@ def chunk_tuning(out: str, n: int) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="capplan")
-    ap.add_argument("cmd", choices=["roofline", "kv", "ablation", "sizing", "chunks", "all"])
+    ap.add_argument(
+        "cmd", choices=["roofline", "kv", "ablation", "sizing", "chunks", "calibrate", "all"]
+    )
     ap.add_argument("--out", default="results")
     ap.add_argument("--workloads", nargs="+", default=["chat", "rag", "agent"])
     ap.add_argument("--target-rps", type=float, default=20.0)
     ap.add_argument("--n", type=int, default=1000)
+    ap.add_argument("--bench", help="calibrate: JSONL written by capplan.bench")
+    ap.add_argument("--model", default="qwen2.5-1.5b")
+    ap.add_argument("--hw", default="T4")
+    ap.add_argument("--chunk", type=int, default=2048)
     a = ap.parse_args(argv)
+    if a.cmd == "calibrate":
+        from .calibrate import fit, load, report
+        from .model import HARDWARE, MODELS
+
+        m, hw = MODELS[a.model], HARDWARE[a.hw]
+        dep, mse, resid = fit(load(a.bench), m, hw, chunk=a.chunk)
+        _w(a.out, f"calibration_{a.model}_{a.hw}.md", report(dep, mse, resid, Deployment(m, hw)))
+        return
     if a.cmd in ("roofline", "all"):
         roofline(a.out)
     if a.cmd in ("kv", "all"):
