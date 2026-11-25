@@ -59,7 +59,10 @@ A100 = Hardware("A100-80G-SXM", 312e12, 2.039e12, 80e9, 300e9)
 L4 = Hardware("L4", 121e12, 0.3e12, 24e9, 32e9, link_latency=20e-6)  # PCIe Gen4 x16
 # Colab's free GPU: FP16 tensor cores (no BF16), GDDR6, PCIe Gen3.
 T4 = Hardware("T4", 65e12, 0.32e12, 16e9, 16e9, link_latency=20e-6)
-HARDWARE = {h.name: h for h in (H100, H200, A100, L4, T4)}
+# Colab's default A100 is the 40 GB SXM4 part (1.555 TB/s HBM2).
+A100_40 = Hardware("A100-40G-SXM", 312e12, 1.555e12, 40e9, 300e9)
+HARDWARE = {h.name: h for h in (H100, H200, A100, A100_40, L4, T4)}
+HARDWARE.update({"A100": A100_40, "A100-80G": A100, "H100": H100})  # short aliases
 
 # Published architectures (Llama 3.1 family; GQA with 8 KV heads).
 LLAMA_8B = ModelSpec("llama3-8b", 8.03e9, 32, 4096, 32, 8, 128)
@@ -69,7 +72,8 @@ LLAMA_8B_MHA = replace(LLAMA_8B, name="llama3-8b-MHA(cf)", n_kv_heads=32)
 # Small open models that fit a T4, used to calibrate the efficiency factors with vLLM.
 QWEN_0_5B = ModelSpec("qwen2.5-0.5b", 0.494e9, 24, 896, 14, 2, 64)
 QWEN_1_5B = ModelSpec("qwen2.5-1.5b", 1.54e9, 28, 1536, 12, 2, 128)
-MODELS = {m.name: m for m in (LLAMA_8B, LLAMA_70B, LLAMA_8B_MHA, QWEN_0_5B, QWEN_1_5B)}
+QWEN_7B = ModelSpec("qwen2.5-7b", 7.62e9, 28, 3584, 28, 4, 128)
+MODELS = {m.name: m for m in (LLAMA_8B, LLAMA_70B, LLAMA_8B_MHA, QWEN_0_5B, QWEN_1_5B, QWEN_7B)}
 
 
 @dataclass(frozen=True)
