@@ -203,14 +203,20 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--model", default="qwen2.5-1.5b")
     ap.add_argument("--hw", default="T4")
     ap.add_argument("--chunk", type=int, default=2048)
+    ap.add_argument("--weight-bytes", type=float, help="calibrate: bytes/param (0.5 AWQ, 1 FP8)")
+    ap.add_argument("--kv-bytes", type=float, help="calibrate: bytes per KV element")
+    ap.add_argument("--tag", default="", help="calibrate: suffix for the report file name")
     a = ap.parse_args(argv)
     if a.cmd == "calibrate":
         from .calibrate import fit, load, report
         from .model import HARDWARE, MODELS
 
         m, hw = MODELS[a.model], HARDWARE[a.hw]
+        if a.weight_bytes is not None or a.kv_bytes is not None:
+            m = m.quantized(a.weight_bytes or m.weight_bytes_per_param, a.kv_bytes)
         dep, mse, resid = fit(load(a.bench), m, hw, chunk=a.chunk)
-        _w(a.out, f"calibration_{a.model}_{a.hw}.md", report(dep, mse, resid, Deployment(m, hw)))
+        name = f"calibration_{a.model}_{a.hw}{a.tag}.md"
+        _w(a.out, name, report(dep, mse, resid, Deployment(m, hw)))
         return
     if a.cmd in ("roofline", "all"):
         roofline(a.out)

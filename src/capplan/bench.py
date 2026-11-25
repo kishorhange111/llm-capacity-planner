@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import random
 import statistics
 import time
@@ -85,6 +86,10 @@ async def level(url, model, concurrency, in_len, out_len, n, vocab, seed):
     }
 
 
+def _key(r: dict) -> tuple:
+    return (r["kind"], r["concurrency"], r["input_len"])
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default="http://localhost:8000")
@@ -97,22 +102,26 @@ def main(argv=None) -> None:
     ap.add_argument("--prefill-inputs", type=int, nargs="+", default=[256, 512, 1024, 2048, 4096])
     a = ap.parse_args(argv)
 
+    # Resumable: points already in --out are skipped, so a reclaimed VM loses at most one point.
+    done = set()
+    if os.path.exists(a.out):
+        with open(a.out) as f:
+            done = {_key(json.loads(x)) for x in f if x.strip()}
+    todo = [("prefill", 1, p, 1, 5) for p in a.prefill_inputs] + [
+        ("decode", c, i, a.decode_output, max(2 * c, 8))
+        for i in a.decode_inputs
+        for c in a.concurrency
+    ]
+    todo = [t for t in todo if t[:3] not in done]
+
     async def go():
         await level(a.url, a.model, 2, 64, 8, 4, a.vocab, 0)  # warm-up (CUDA graphs, caches)
-        with open(a.out, "w") as f:
-            for p in a.prefill_inputs:
-                r = await level(a.url, a.model, 1, p, 1, 5, a.vocab, p)
-                r["kind"] = "prefill"
+        for kind, c, i, o, n in todo:
+            r = await level(a.url, a.model, c, i, o, n, a.vocab, c if kind == "decode" else i)
+            r["kind"] = kind
+            with open(a.out, "a") as f:
                 f.write(json.dumps(r) + "\n")
-                print(r, flush=True)
-            for i in a.decode_inputs:
-                for c in a.concurrency:
-                    r = await level(
-                        a.url, a.model, c, i, a.decode_output, max(2 * c, 8), a.vocab, c
-                    )
-                    r["kind"] = "decode"
-                    f.write(json.dumps(r) + "\n")
-                    print(r, flush=True)
+            print(r, flush=True)
 
     asyncio.run(go())
 

@@ -59,7 +59,10 @@ A100 = Hardware("A100-80G-SXM", 312e12, 2.039e12, 80e9, 300e9)
 L4 = Hardware("L4", 121e12, 0.3e12, 24e9, 32e9, link_latency=20e-6)  # PCIe Gen4 x16
 # Colab's free GPU: FP16 tensor cores (no BF16), GDDR6, PCIe Gen3.
 T4 = Hardware("T4", 65e12, 0.32e12, 16e9, 16e9, link_latency=20e-6)
-HARDWARE = {h.name: h for h in (H100, H200, A100, L4, T4)}
+# Colab's default A100 is the 40 GB SXM4 part (1.555 TB/s HBM2).
+A100_40 = Hardware("A100-40G-SXM", 312e12, 1.555e12, 40e9, 300e9)
+HARDWARE = {h.name: h for h in (H100, H200, A100, A100_40, L4, T4)}
+HARDWARE.update({"A100": A100_40, "A100-80G": A100, "H100": H100})  # short aliases
 
 # Published architectures (Llama 3.1 family; GQA with 8 KV heads).
 LLAMA_8B = ModelSpec("llama3-8b", 8.03e9, 32, 4096, 32, 8, 128)
@@ -69,7 +72,8 @@ LLAMA_8B_MHA = replace(LLAMA_8B, name="llama3-8b-MHA(cf)", n_kv_heads=32)
 # Small open models that fit a T4, used to calibrate the efficiency factors with vLLM.
 QWEN_0_5B = ModelSpec("qwen2.5-0.5b", 0.494e9, 24, 896, 14, 2, 64)
 QWEN_1_5B = ModelSpec("qwen2.5-1.5b", 1.54e9, 28, 1536, 12, 2, 128)
-MODELS = {m.name: m for m in (LLAMA_8B, LLAMA_70B, LLAMA_8B_MHA, QWEN_0_5B, QWEN_1_5B)}
+QWEN_7B = ModelSpec("qwen2.5-7b", 7.62e9, 28, 3584, 28, 4, 128)
+MODELS = {m.name: m for m in (LLAMA_8B, LLAMA_70B, LLAMA_8B_MHA, QWEN_0_5B, QWEN_1_5B, QWEN_7B)}
 
 
 @dataclass(frozen=True)
@@ -82,6 +86,9 @@ class Deployment:
     mem_util: float = 0.9  # fraction of HBM the engine may use
     activation_reserve: float = 2e9  # per GPU, for activations / workspace (assumption)
     step_overhead: float = 1.5e-3  # scheduler + kernel launch per iteration (assumption)
+    # Achieved fraction of peak FLOPs for attention (QK^T, AV). None = same as ``mfu``. Worth
+    # separating when the attention kernel is much weaker than the GEMMs, e.g. no FlashAttention.
+    attn_mfu: float | None = None
 
     @property
     def name(self) -> str:
@@ -129,10 +136,13 @@ class Deployment:
             return 0.0
         d_attn = m.n_heads * m.head_dim
         # Matmul FLOPs (2 per param per token), plus attention scores and values (QK^T, AV).
-        flops = 2 * m.n_params * tokens + 4 * m.n_layers * d_attn * (decode_ctx + prefill_attn)
+        mm_flops = 2 * m.n_params * tokens
+        attn_flops = 4 * m.n_layers * d_attn * (decode_ctx + prefill_attn)
         # Weights once per step, KV read for decodes and prior chunks, KV written for new tokens.
         bytes_ = m.weight_bytes + m.kv_bytes_per_token * (decode_ctx + prefill_kv + tokens)
-        t_compute = flops / (self.tp * self.hw.flops * self.mfu)
+        peak = self.tp * self.hw.flops
+        attn_mfu = self.mfu if self.attn_mfu is None else self.attn_mfu
+        t_compute = mm_flops / (peak * self.mfu) + attn_flops / (peak * attn_mfu)
         t_memory = bytes_ / (self.tp * self.hw.mem_bw * self.mbu)
         return max(t_compute, t_memory) + self._allreduce(tokens) + self.step_overhead
 
