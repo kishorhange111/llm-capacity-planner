@@ -96,10 +96,21 @@ These tables use a 2,048-token chunk budget; the per-GPU chunk tuning is in sect
 
 Run with `capplan chunks` (in the Colab notebook). Results are pending and will be added from that run.
 
+### 6. Calibrating against real vLLM
+
+Every number above uses *assumed* efficiencies (mfu 0.5, mbu 0.7, 1.5 ms per step). `capplan.bench` measures a live OpenAI-compatible server and `capplan calibrate` fits those three knobs:
+
+- **prefill points** (concurrency 1, prompts of 256–4,096 random token IDs, 1 output token): TTFT is compute-bound, so these pin `mfu`;
+- **decode points** (concurrency 1–64, 128 output tokens with `ignore_eos`): small-batch TPOT is weight-read-bound, so these pin `mbu` and the step overhead; large batches test the KV-read term.
+
+The fit is a grid search on log error, and the report lists measured vs predicted time for every point, so a model that can't explain the data shows up as large residuals instead of being absorbed into the fit. On synthetic data generated from known factors it recovers them exactly (a test checks this).
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kishorhange111/llm-capacity-planner/blob/main/notebooks/colab_vllm_calibration.ipynb) runs it for Qwen2.5-1.5B with `vllm serve` on a free T4. **Measured results are pending** and will be added from that run.
+
 ## Run
 
 ```
-pip install -e ".[dev,plots]"
-pytest -q                                  # 12 tests: roofline identities, Little's law, overload, SLO bisection
+pip install -e ".[dev,plots,bench]"
+pytest -q                                  # 16 tests: roofline identities, Little's law, overload, SLO bisection, calibration fit
 python -m capplan.cli all --out results    # or run the Colab notebook
 ```
