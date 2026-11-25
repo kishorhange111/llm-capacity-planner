@@ -96,21 +96,41 @@ These tables use a 2,048-token chunk budget; the per-GPU chunk tuning is in sect
 
 Run with `capplan chunks` (in the Colab notebook). Results are pending and will be added from that run.
 
-### 6. Calibrating against real vLLM
+### 6. Calibrating against real vLLM (measured)
 
-Every number above uses *assumed* efficiencies (mfu 0.5, mbu 0.7, 1.5 ms per step). `capplan.bench` measures a live OpenAI-compatible server and `capplan calibrate` fits those three knobs:
+Every number above uses *assumed* efficiencies (mfu 0.5, mbu 0.7, 1.5 ms per step). `capplan.bench` measures a live OpenAI-compatible server, and `capplan calibrate` fits the model's knobs to the measurements:
 
-- **prefill points** (concurrency 1, prompts of 256–4,096 random token IDs, 1 output token): TTFT is compute-bound, so these pin `mfu`;
-- **decode points** (concurrency 1–64, 128 output tokens with `ignore_eos`): small-batch TPOT is weight-read-bound, so these pin `mbu` and the step overhead; large batches test the KV-read term.
+- **prefill points:** concurrency 1, prompts of 256–4,096 random token IDs, 1 output token;
+- **decode points:** concurrency 1–64, prompts of 128 or 1,024 tokens, 128 output tokens with `ignore_eos`.
 
-The fit is a grid search on log error, and the report lists measured vs predicted time for every point, so a model that can't explain the data shows up as large residuals instead of being absorbed into the fit. On synthetic data generated from known factors it recovers them exactly (a test checks this).
+**First measurement:** Qwen2.5-1.5B-Instruct, `vllm serve` 0.34.0 on a Colab **Tesla T4** (fp16, 2,048-token chunked prefill, prefix caching off). Raw data is in [`results/calibration/`](results/calibration/).
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kishorhange111/llm-capacity-planner/blob/main/notebooks/colab_vllm_calibration.ipynb) runs it for Qwen2.5-1.5B with `vllm serve` on a free T4. **Measured results are pending** and will be added from that run.
+The first fit failed: **76% RMS error**. Two patterns in the residuals pointed to two missing pieces of the model:
+
+1. **Prefill grows much faster than linearly.** Going from 1k to 4k tokens cost 10.6×, not ~4×. The vLLM log shows why: on Turing it picks the `TRITON_ATTN` backend (no FlashAttention), so attention FLOPs run far less efficiently than the GEMMs. The model now has a separate `attn_mfu`.
+2. **High-concurrency decode was 4× slower than predicted** (186 ms vs 42 ms TPOT at c=64, 1k prompts). The benchmark is closed-loop, so other requests' prefill chunks share engine steps with the decodes. Measured TPOT includes that interference, and a pure-decode prediction doesn't. `calibrate.replay` now simulates the benchmark's actual schedule step by step (decodes first, then prefill chunks up to the budget), so the fit compares like with like.
+
+| fit | mfu | attn_mfu | mbu | step overhead | RMS error | worst point |
+|---|---|---|---|---|---|---|
+| assumed defaults, no fit | 0.5 | 0.5 | 0.7 | 1.5 ms | — | — |
+| pure-decode prediction, one mfu (first version) | 0.150 | = mfu | 0.380 | 0.00 ms | **76%** | −78% (decode c=64, in=1024) |
+| replay of the closed-loop schedule, one mfu | 0.149 | = mfu | 0.589 | 0.14 ms | 27% | +55% (prefill, 256 tokens) |
+| replay + separate attention efficiency | **0.271** | **0.0105** | **0.589** | **0.80 ms** | **12%** | −25% (decode c=64, in=128) |
+
+What the calibrated numbers say:
+- **T4 attention runs at ~1% of peak**, versus ~27% for the GEMMs. On this stack, long prompts are bound by the attention kernel, not the weights. A planner that assumes FlashAttention-class attention would under-predict 4k-token TTFT by about 2×.
+- **59% of peak bandwidth** is what small-batch decode achieves, below the 70% assumed above.
+- **About 0.8 ms of fixed cost per step**, close to the 1.5 ms assumed.
+- **Interference is the dominant effect at high load:** at c=64 with 1k prompts, TPOT is 186 ms measured (180 ms predicted), against a ~30 ms pure-decode step.
+
+Per-point residuals: [`calibration_qwen2.5-1.5b_T4.md`](results/calibration/calibration_qwen2.5-1.5b_T4.md). Larger GPUs (A100/H100) and quantized variants are next; Colab had no A100 capacity when this ran.
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kishorhange111/llm-capacity-planner/blob/main/notebooks/colab_vllm_calibration.ipynb) reproduces the T4 run.
 
 ## Run
 
 ```
 pip install -e ".[dev,plots,bench]"
-pytest -q                                  # 16 tests: roofline identities, Little's law, overload, SLO bisection, calibration fit
+pytest -q                                  # 18 tests: roofline identities, Little's law, overload, SLO bisection, calibration fit + replay
 python -m capplan.cli all --out results    # or run the Colab notebook
 ```

@@ -86,6 +86,9 @@ class Deployment:
     mem_util: float = 0.9  # fraction of HBM the engine may use
     activation_reserve: float = 2e9  # per GPU, for activations / workspace (assumption)
     step_overhead: float = 1.5e-3  # scheduler + kernel launch per iteration (assumption)
+    # Achieved fraction of peak FLOPs for attention (QK^T, AV). None = same as ``mfu``. Worth
+    # separating when the attention kernel is much weaker than the GEMMs, e.g. no FlashAttention.
+    attn_mfu: float | None = None
 
     @property
     def name(self) -> str:
@@ -133,10 +136,13 @@ class Deployment:
             return 0.0
         d_attn = m.n_heads * m.head_dim
         # Matmul FLOPs (2 per param per token), plus attention scores and values (QK^T, AV).
-        flops = 2 * m.n_params * tokens + 4 * m.n_layers * d_attn * (decode_ctx + prefill_attn)
+        mm_flops = 2 * m.n_params * tokens
+        attn_flops = 4 * m.n_layers * d_attn * (decode_ctx + prefill_attn)
         # Weights once per step, KV read for decodes and prior chunks, KV written for new tokens.
         bytes_ = m.weight_bytes + m.kv_bytes_per_token * (decode_ctx + prefill_kv + tokens)
-        t_compute = flops / (self.tp * self.hw.flops * self.mfu)
+        peak = self.tp * self.hw.flops
+        attn_mfu = self.mfu if self.attn_mfu is None else self.attn_mfu
+        t_compute = mm_flops / (peak * self.mfu) + attn_flops / (peak * attn_mfu)
         t_memory = bytes_ / (self.tp * self.hw.mem_bw * self.mbu)
         return max(t_compute, t_memory) + self._allreduce(tokens) + self.step_overhead
 
