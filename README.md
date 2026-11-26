@@ -94,7 +94,23 @@ These tables use a 2,048-token chunk budget; the per-GPU chunk tuning is in sect
 
 ### 5. Chunk-budget tuning per GPU
 
-Run with `capplan chunks` (in the Colab notebook). Results are pending and will be added from that run.
+`capplan chunks` sweeps the chunked-prefill token budget and reports the highest request rate per replica that still meets the SLO (TTFT p95 ≤ 1 s, TPOT p95 ≤ 50 ms). These numbers come from the simulator with the roofline cost model, not from measured runs ([results/chunk_tuning.md](results/chunk_tuning.md)).
+
+| deployment | workload | 256 | 512 | 1024 | 2048 | 4096 |
+|---|---|---|---|---|---|---|
+| 8B, 1×H100 | chat | 16.60 | 21.53 | **22.48** | 20.61 | 19.74 |
+| 8B, 1×H100 | agent | 3.97 | 4.33 | **4.73** | 3.81 | 3.34 |
+| 8B, 1×A100-80G | chat | 5.62 | **6.13** | 5.38 | 5.15 | 4.94 |
+| 8B, 1×A100-80G | agent | miss | miss | miss | miss | miss |
+| 8B, 2×H100 (TP2) | chat | 27.92 | 36.20 | **41.23** | **41.23** | 39.48 |
+| 8B, 2×H100 (TP2) | agent | 7.61 | 9.45 | 10.31 | **11.24** | 9.05 |
+| 70B, 4×H100 (TP4) | chat | 7.29 | **7.95** | 6.98 | 6.68 | 6.40 |
+| 70B, 4×H100 (TP4) | agent | 0.62 | 0.73 | 0.80 | **0.84** | 0.70 |
+
+- **One fixed budget leaves capacity unused.** Against a fixed 2,048, the best budget gives +9% (8B H100 chat), +24% (8B H100 agent), +19% (8B A100 chat) and +19% (70B TP4 chat).
+- **The best budget depends on the GPU and the workload.** A slower GPU (A100) or a bigger model per GPU (70B TP4) prefers smaller chunks for chat: a large chunk makes every decode step that shares it slower, which hurts TPOT. Long-prompt agent traffic prefers larger chunks: a small chunk needs more steps to finish a prompt, which hurts TTFT.
+- **Neither end of the sweep is ever best.** 256 and 4,096 lose in every row.
+- 8B on one A100 cannot serve the agent workload within the SLO at any budget.
 
 ### 6. Calibrating against real vLLM (measured)
 
